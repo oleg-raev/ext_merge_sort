@@ -16,19 +16,21 @@ import (
 )
 
 const (
-	chunkSize  = 1000
-	bufferSize = 64 * 1024 //128KB
+	chunkSize    = 1000
+	ioBufferSize = 64 * 1024 //128KB
 )
 
 type ExtMergeSort struct {
 	inputPath string
+	outputPath string
 	tempDir   string
 	chunksCnt int
 }
 
-func New(path string) ExtMergeSort {
+func New(inputPath, outputPath string) ExtMergeSort {
 	return ExtMergeSort{
-		inputPath: path,
+		inputPath:  inputPath,
+		outputPath: outputPath,
 	}
 }
 
@@ -44,6 +46,12 @@ func (e *ExtMergeSort) Sort() error {
 	if err := e.mergeSort(); err != nil {
 		return err
 	}
+
+	if err := os.Rename(e.getChunkPath(0), e.outputPath); err != nil {
+		logrus.WithError(err).Error("Can't move result file to destination folder")
+		return err
+	}
+
 	return nil
 }
 
@@ -62,17 +70,15 @@ func (e *ExtMergeSort) mergeSort() error {
 	return nil
 }
 
-func (e *ExtMergeSort) getChunkScanner(num int) (*bufio.Scanner, error) {
+func (e *ExtMergeSort) getChunkReader(num int) (*bufio.Reader, error) {
 	path := e.getChunkPath(num)
 	f, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		logrus.WithField("inputPath", path).WithError(err).Error("Can't open chunk")
 		return nil, err
 	}
-	lreader := bufio.NewScanner(f)
-	lreader.Split(bufio.ScanLines)
 
-	return lreader, nil
+	return bufio.NewReaderSize(f, ioBufferSize), nil
 }
 
 func (e *ExtMergeSort) getOutputWriter(left, right int) (*bufio.Writer, error) {
@@ -81,15 +87,27 @@ func (e *ExtMergeSort) getOutputWriter(left, right int) (*bufio.Writer, error) {
 		logrus.WithError(err).Error("Error on creating output file for merging chunks %q and %q", left, right)
 		return nil, err
 	}
-	return bufio.NewWriterSize(f, bufferSize), nil
+	return bufio.NewWriterSize(f, ioBufferSize), nil
+}
+
+func (e *ExtMergeSort) nextLine(r *bufio.Reader) ([]byte, error) {
+	res, _, err := r.ReadLine()
+	if err == io.EOF {
+		return nil, nil
+	}
+	if err != nil {
+		logrus.WithError(err).Error("Error on reading line")
+		return nil, err
+	}
+	return res, nil
 }
 
 func (e *ExtMergeSort) merge(left, right int) error {
-	leftScan, err := e.getChunkScanner(left)
+	readerL, err := e.getChunkReader(left)
 	if err != nil {
 		return err
 	}
-	rightScan, err := e.getChunkScanner(right)
+	readerR, err := e.getChunkReader(right)
 	if err != nil {
 		return err
 	}
@@ -99,42 +117,54 @@ func (e *ExtMergeSort) merge(left, right int) error {
 		return err
 	}
 
-	leftScan.Scan()
-	lineL := leftScan.Bytes()
-	rightScan.Scan()
-	lineR := rightScan.Bytes()
+	lineL, err := e.nextLine(readerL)
+	if err != nil {
+		return err
+	}
+	lineR, err := e.nextLine(readerR)
+	if err != nil {
+		return err
+	}
 	for {
 		//todo simplify it
 		if bytes.Compare(lineL, lineR) == -1 {
 			if err := e.addLine(out, lineL); err != nil {
 				return err
 			}
-			if !leftScan.Scan() {
+			lineL, err = e.nextLine(readerL)
+			if err != nil {
+				return err
+			}
+
+			if lineL == nil || len(lineL) == 0 {
 				if err := e.addLine(out, lineR); err != nil {
 					logrus.WithError(err).Error("Can't write to lineR")
 					return err
 				}
-				if err := e.copyRestRows(rightScan, out); err != nil {
+				if err := e.writeRestRows(readerR, out); err != nil {
 					return err
 				}
 				break
 			}
-			lineL = append([]byte{'\n'}, leftScan.Bytes()...)
 		} else {
 			if err := e.addLine(out, lineR); err != nil {
 				return err
 			}
-			if !rightScan.Scan() {
+			lineR, err = e.nextLine(readerR)
+			if err != nil {
+				return err
+			}
+
+			if lineR == nil || len(lineR) == 0 {
 				if err := e.addLine(out, lineL); err != nil {
 					logrus.WithError(err).Error("Can't write to lineR")
 					return err
 				}
-				if err := e.copyRestRows(leftScan, out); err != nil {
+				if err := e.writeRestRows(readerL, out); err != nil {
 					return err
 				}
 				break
 			}
-			lineR = append([]byte{'\n'}, rightScan.Bytes()...)
 		}
 	}
 	if err := out.Flush(); err != nil {
@@ -180,9 +210,17 @@ func (e *ExtMergeSort) sanitizeMergedFiles(left, right int) error {
 	return nil
 }
 
-func (e *ExtMergeSort) copyRestRows(from *bufio.Scanner, to *bufio.Writer) error {
-	for from.Scan() {
-		if _, err := to.Write(append(from.Bytes(), '\n')); err != nil {
+func (e *ExtMergeSort) writeRestRows(from *bufio.Reader, to *bufio.Writer) error {
+	for {
+		line, err := e.nextLine(from)
+		if err != nil {
+			return err
+		}
+		if line == nil || len(line) == 0 {
+			break
+		}
+
+		if _, err := to.Write(append(line, '\n')); err != nil {
 			logrus.WithError(err).Error("Can't write bytes to out")
 			return err
 		}
@@ -209,7 +247,7 @@ func (e *ExtMergeSort) prepareChunks() error {
 	}
 	defer file.Close()
 
-	reader := bufio.NewReaderSize(file, bufferSize)
+	reader := bufio.NewReaderSize(file, ioBufferSize)
 	var (
 		chunkNum  = -1
 		lineNum   = 0
@@ -252,8 +290,13 @@ func (e *ExtMergeSort) prepareChunks() error {
 }
 
 func (e *ExtMergeSort) addLine(writer *bufio.Writer, line []byte) error {
+	var errMsg = "Can't write bytes to out"
 	if _, err := writer.Write(line); err != nil {
-		logrus.WithError(err).Error("Can't write bytes to out")
+		logrus.WithError(err).Error(errMsg)
+		return err
+	}
+	if err := writer.WriteByte('\n'); err != nil {
+		logrus.WithError(err).Error(errMsg)
 		return err
 	}
 	return nil
@@ -293,7 +336,7 @@ func (e *ExtMergeSort) sortAndSaveChunk(data [][]byte, chunkNum int) error {
 	}
 	defer f.Close()
 
-	writer := bufio.NewWriterSize(f, bufferSize)
+	writer := bufio.NewWriterSize(f, ioBufferSize)
 
 	if _, err := writer.Write(bytes.Join(data, []byte{'\n'})); err != nil {
 		logrus.WithError(err).Error("Can't write to chunk file")

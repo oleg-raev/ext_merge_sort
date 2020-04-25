@@ -15,7 +15,8 @@ func main() {
 	var (
 		isGenerateMode bool
 		isSortMode     bool
-		filePath       string
+		inputPath      string
+		outputPath     string
 		lines          int64
 		maxLength      int
 	)
@@ -28,9 +29,11 @@ func main() {
 	flag.BoolVar(&isGenerateMode, "generate", false,
 		"Generate new file for sorting")
 	flag.BoolVar(&isSortMode, "sort", true,
-		"Sort file given by -file param")
-	flag.StringVar(&filePath, "file", "",
-		"File path for operation")
+		"Sort file given by -in param")
+	flag.StringVar(&inputPath, "in", "",
+		"Input file path")
+	flag.StringVar(&outputPath, "out", "",
+		"Destination file path for operation")
 	flag.Int64Var(&lines, "lines", 10000,
 		"Set lines count for the file generating (default 10000)")
 	flag.IntVar(&maxLength, "rowlen", 256,
@@ -38,24 +41,29 @@ func main() {
 
 	flag.Parse()
 
-	if filePath == "" {
-		fmt.Println("Please, provide -file param")
+	if outputPath == "" {
+		fmt.Println("Please, provide -out param with the address for result file")
 		return
 	}
+
 	if isGenerateMode {
-		fmt.Printf("Starting generating file by path %q\n", filePath)
-		if err := generator.GenerateFile(filePath, lines, maxLength); err != nil {
+		fmt.Printf("Starting generating file by path %q\n", outputPath)
+		if err := generator.GenerateFile(outputPath, lines, maxLength); err != nil {
 			panic("Exit: Error happend")
 		}
 
-		fmt.Printf("File has been generated %q\n", filePath)
+		fmt.Println("File has been generated")
 		return
 	}
 
 	if isSortMode {
-		fmt.Printf("Starting sort of file %q\n", filePath)
+		if inputPath == "" {
+			fmt.Println("Please, provide -in param")
+			return
+		}
+		fmt.Printf("Starting sort of file %q\n", inputPath)
 
-		msort := ext_merge_sort.New(filePath)
+		msort := ext_merge_sort.New(inputPath, outputPath)
 		if err := msort.Sort(); err != nil {
 			panic("Exit: Error happend")
 		}
