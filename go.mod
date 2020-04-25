@@ -1,4 +1,4 @@
-module joom-sort
+module ext_merge_sort
 
 require (
 	github.com/sirupsen/logrus v1.5.0
