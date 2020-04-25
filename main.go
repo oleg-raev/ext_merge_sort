@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"joom-sort/ext_merge_sort"
-	"joom-sort/generator"
+	"ext_merge_sort/ext_merge_sort"
+	"ext_merge_sort/generator"
 
 	"github.com/sirupsen/logrus"
 )

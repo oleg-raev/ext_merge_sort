@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"joom-sort/common"
+	"ext_merge_sort/common"
 
 	"github.com/sirupsen/logrus"
 )
