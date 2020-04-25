@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"ext_merge_sort/ext_merge_sort"
+	"ext_merge_sort/sort"
 	"ext_merge_sort/generator"
 
 	"github.com/sirupsen/logrus"
@@ -63,7 +63,7 @@ func main() {
 		}
 		fmt.Printf("Starting sort of file %q\n", inputPath)
 
-		msort := ext_merge_sort.New(inputPath, outputPath)
+		msort := sort.New(inputPath, outputPath)
 		if err := msort.Sort(); err != nil {
 			panic("Exit: Error happend")
 		}
