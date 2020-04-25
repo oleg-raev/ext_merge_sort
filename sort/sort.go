@@ -21,10 +21,10 @@ const (
 )
 
 type ExtMergeSort struct {
-	inputPath string
+	inputPath  string
 	outputPath string
-	tempDir   string
-	chunksCnt int
+	tempDir    string
+	chunksCnt  int
 }
 
 func New(inputPath, outputPath string) ExtMergeSort {

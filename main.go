@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"ext_merge_sort/sort"
 	"ext_merge_sort/generator"
+	"ext_merge_sort/sort"
 
 	"github.com/sirupsen/logrus"
 )
